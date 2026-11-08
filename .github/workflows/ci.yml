@@ -24,17 +24,29 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
-      - name: Security Check: Zero-Secret & Zero-PII Scan
+      - name: "Security Check: Zero-Secret & Zero-PII Scan"
         run: |
           echo "Scanning codebase for hardcoded API keys, tokens, or PII..."
           # 檢查是否有明文 Gemini/OpenAI API Key
-          if grep -rnEI 'AIza[0-9A-Za-z-_]{35}|sk-[a-zA-Z0-9]{32,}' lib/ ; then
+          # grep 回傳 0 = 找到、1 = 沒找到、2 以上 = 掃描本身出錯 (也要擋下)
+          set +e
+          grep -rnEI 'AIza[0-9A-Za-z_-]{35}|AQ\.[0-9A-Za-z_-]{30,}|sk-[a-zA-Z0-9]{32,}' lib/
+          rc=$?
+          if [ $rc -eq 0 ]; then
             echo "::error::Found potential hardcoded API key in lib/! Build rejected."
+            exit 1
+          elif [ $rc -gt 1 ]; then
+            echo "::error::API key scan failed to run (grep exit $rc)."
             exit 1
           fi
           # 檢查是否有本機私人使用者絕對路徑
-          if grep -rnEI '/Users/[a-zA-Z0-9._-]+/|C:\\\\Users\\\\[a-zA-Z0-9._-]+' lib/ ; then
+          grep -rnEI '/Users/[a-zA-Z0-9._-]+/|C:\\\\Users\\\\[a-zA-Z0-9._-]+' lib/
+          rc=$?
+          if [ $rc -eq 0 ]; then
             echo "::error::Found potential hardcoded host private path in lib/! Build rejected."
+            exit 1
+          elif [ $rc -gt 1 ]; then
+            echo "::error::Private path scan failed to run (grep exit $rc)."
             exit 1
           fi
           echo "Zero-Secret security scan passed!"
