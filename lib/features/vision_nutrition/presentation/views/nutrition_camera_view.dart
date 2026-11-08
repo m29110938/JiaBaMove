@@ -9,7 +9,9 @@ import '../../../settings/presentation/controllers/api_key_controller.dart';
 import '../../../settings/presentation/views/api_key_settings_view.dart';
 import '../../data/datasources/gemini_vision_service.dart';
 import '../../data/models/nutrition_analysis_model.dart';
+import '../../domain/entities/meal_log_entity.dart';
 import '../controllers/meal_log_controller.dart';
+import '../widgets/meal_entry_sheet.dart';
 
 final geminiVisionServiceProvider = Provider<GeminiVisionService>((ref) {
   return GeminiVisionService(
@@ -38,11 +40,33 @@ class _NutritionCameraViewState extends ConsumerState<NutritionCameraView> {
   /// 將目前分析結果加入今日飲食紀錄
   Future<void> _saveResultToLog() async {
     final result = _analysisResult;
+    if (result == null || !result.isFood) return;
+    await _saveDraft(MealDraft.fromAnalysis(result));
+  }
+
+  /// 先修改 AI 估算的數值再加入紀錄
+  Future<void> _editAndSave() async {
+    final result = _analysisResult;
     if (result == null || !result.isFood || _savedToLog || _isSavingToLog) {
       return;
     }
+    final edited = await showMealEntrySheet(
+      context,
+      initial: MealDraft.fromAnalysis(result),
+      title: '修改 AI 估算結果',
+      showFavorites: false,
+    );
+    if (edited == null || !mounted) return;
+    if (edited.saveAsFavorite) {
+      await ref.read(mealLogControllerProvider.notifier).addFavorite(edited.draft);
+    }
+    await _saveDraft(edited.draft);
+  }
+
+  Future<void> _saveDraft(MealDraft draft) async {
+    if (_savedToLog || _isSavingToLog) return;
     setState(() => _isSavingToLog = true);
-    await ref.read(mealLogControllerProvider.notifier).addFromAnalysis(result);
+    await ref.read(mealLogControllerProvider.notifier).addDraft(draft);
     if (!mounted) return;
     setState(() {
       _isSavingToLog = false;
@@ -50,7 +74,7 @@ class _NutritionCameraViewState extends ConsumerState<NutritionCameraView> {
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('已將「${result.foodName}」加入今日紀錄 🍱'),
+        content: Text('已將「${draft.foodName.trim()}」加入今日紀錄 🍱'),
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -486,28 +510,49 @@ class _NutritionCameraViewState extends ConsumerState<NutritionCameraView> {
           // 加入今日紀錄
           if (result.isFood) ...[
             const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                key: const Key('save_meal_log_button'),
-                style: _savedToLog
-                    ? ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.accentGreen,
-                        disabledBackgroundColor:
-                            AppTheme.accentGreen.withValues(alpha: 0.85),
-                        disabledForegroundColor: Colors.white,
-                      )
-                    : null,
-                onPressed:
-                    (_savedToLog || _isSavingToLog) ? null : _saveResultToLog,
-                icon: Icon(
-                  _savedToLog
-                      ? CupertinoIcons.checkmark_alt_circle_fill
-                      : CupertinoIcons.plus_circle_fill,
-                  size: 20,
+            Row(
+              children: [
+                if (!_savedToLog) ...[
+                  OutlinedButton.icon(
+                    key: const Key('edit_meal_result_button'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppTheme.textDark,
+                      minimumSize: const Size(0, 52),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      side: const BorderSide(color: Color(0xFFCBD5E1)),
+                    ),
+                    onPressed: _isSavingToLog ? null : _editAndSave,
+                    icon: const Icon(CupertinoIcons.pencil, size: 18),
+                    label: const Text('修改數值'),
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                Expanded(
+                  child: ElevatedButton.icon(
+                    key: const Key('save_meal_log_button'),
+                    style: _savedToLog
+                        ? ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.accentGreen,
+                            disabledBackgroundColor:
+                                AppTheme.accentGreen.withValues(alpha: 0.85),
+                            disabledForegroundColor: Colors.white,
+                          )
+                        : null,
+                    onPressed: (_savedToLog || _isSavingToLog)
+                        ? null
+                        : _saveResultToLog,
+                    icon: Icon(
+                      _savedToLog
+                          ? CupertinoIcons.checkmark_alt_circle_fill
+                          : CupertinoIcons.plus_circle_fill,
+                      size: 20,
+                    ),
+                    label: Text(_savedToLog ? '已加入今日紀錄' : '加入今日紀錄'),
+                  ),
                 ),
-                label: Text(_savedToLog ? '已加入今日紀錄' : '加入今日紀錄'),
-              ),
+              ],
             ),
           ],
         ],

@@ -7,6 +7,7 @@ import '../../../fitness_recommendations/presentation/controllers/workout_contro
 import '../../../profile/presentation/controllers/profile_controller.dart';
 import '../../../vision_nutrition/domain/entities/meal_log_entity.dart';
 import '../../../vision_nutrition/presentation/controllers/meal_log_controller.dart';
+import '../../../vision_nutrition/presentation/widgets/meal_entry_sheet.dart';
 
 /// 今日總覽與飲食打卡首頁
 class HomeView extends ConsumerWidget {
@@ -24,7 +25,8 @@ class HomeView extends ConsumerWidget {
     final mealState = ref.watch(mealLogControllerProvider);
     final todayMeals = mealState.todayLogs;
     final consumedCalories = mealState.todayCalories.round();
-    final remainingCalories = (targetCalories - consumedCalories).clamp(0, 9999);
+    final remainingCalories = targetCalories - consumedCalories;
+    final isOverTarget = remainingCalories < 0;
 
     return Scaffold(
       appBar: AppBar(
@@ -144,11 +146,15 @@ class HomeView extends ConsumerWidget {
                           ],
                         ),
                         Text(
-                          '剩餘 $remainingCalories kcal',
-                          style: const TextStyle(
+                          isOverTarget
+                              ? '超過 ${-remainingCalories} kcal'
+                              : '還可吃 $remainingCalories kcal',
+                          style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: AppTheme.accentGreen,
+                            color: isOverTarget
+                                ? AppTheme.errorRed
+                                : AppTheme.accentGreen,
                           ),
                         ),
                       ],
@@ -160,8 +166,11 @@ class HomeView extends ConsumerWidget {
                         value: (consumedCalories / targetCalories).clamp(0.0, 1.0),
                         minHeight: 10,
                         backgroundColor: const Color(0xFFF1F5F9),
-                        valueColor:
-                            const AlwaysStoppedAnimation<Color>(AppTheme.primaryOrange),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          isOverTarget
+                              ? AppTheme.errorRed
+                              : AppTheme.primaryOrange,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 18),
@@ -172,20 +181,20 @@ class HomeView extends ConsumerWidget {
                       children: [
                         _buildMacroItem(
                           '蛋白質',
-                          '${mealState.todayProtein.round()}g',
-                          '/ ${proteinTarget}g',
+                          mealState.todayProtein,
+                          proteinTarget,
                           const Color(0xFF3B82F6),
                         ),
                         _buildMacroItem(
                           '碳水',
-                          '${mealState.todayCarbs.round()}g',
-                          '/ ${carbsTarget}g',
+                          mealState.todayCarbs,
+                          carbsTarget,
                           AppTheme.primaryOrange,
                         ),
                         _buildMacroItem(
                           '脂肪',
-                          '${mealState.todayFat.round()}g',
-                          '/ ${fatTarget}g',
+                          mealState.todayFat,
+                          fatTarget,
                           const Color(0xFFEAB308),
                         ),
                       ],
@@ -208,12 +217,28 @@ class HomeView extends ConsumerWidget {
                       color: AppTheme.textDark,
                     ),
                   ),
-                  Text(
-                    '${todayMeals.length} 餐已紀錄',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: AppTheme.textMuted,
-                    ),
+                  Row(
+                    children: [
+                      Text(
+                        '${todayMeals.length} 餐已紀錄',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: AppTheme.textMuted,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      TextButton.icon(
+                        key: const Key('manual_add_meal_button'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppTheme.primaryOrange,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          minimumSize: const Size(0, 36),
+                        ),
+                        onPressed: () => _addManually(context, ref),
+                        icon: const Icon(CupertinoIcons.plus_circle, size: 18),
+                        label: const Text('手動新增'),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -248,6 +273,7 @@ class HomeView extends ConsumerWidget {
                       );
                     },
                     child: _buildMealTile(
+                      onTap: () => _editMeal(context, ref, meal),
                       title: '${meal.mealType.label}：${meal.foodName}',
                       subtitle:
                           '蛋白質 ${meal.protein.round()}g • 碳水 ${meal.carbs.round()}g • 脂肪 ${meal.fat.round()}g',
@@ -340,6 +366,29 @@ class HomeView extends ConsumerWidget {
     );
   }
 
+  Future<void> _addManually(BuildContext context, WidgetRef ref) async {
+    final result = await showMealEntrySheet(context);
+    if (result == null) return;
+    final notifier = ref.read(mealLogControllerProvider.notifier);
+    if (result.saveAsFavorite) await notifier.addFavorite(result.draft);
+    await notifier.addDraft(result.draft);
+  }
+
+  Future<void> _editMeal(
+      BuildContext context, WidgetRef ref, MealLogEntity meal) async {
+    final result = await showMealEntrySheet(
+      context,
+      initial: MealDraft.fromLog(meal),
+      title: '修改餐點',
+      submitLabel: '儲存修改',
+      showFavorites: false,
+    );
+    if (result == null) return;
+    final notifier = ref.read(mealLogControllerProvider.notifier);
+    if (result.saveAsFavorite) await notifier.addFavorite(result.draft);
+    await notifier.update(meal.id, result.draft);
+  }
+
   Widget _buildEmptyMealsHint() {
     return Container(
       width: double.infinity,
@@ -363,7 +412,7 @@ class HomeView extends ConsumerWidget {
           ),
           SizedBox(height: 4),
           Text(
-            '到「拍照分析」拍下餐點，按「加入今日紀錄」就會出現在這裡',
+            '到「拍照分析」拍下餐點，或按右上「手動新增」',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
           ),
@@ -409,7 +458,8 @@ class HomeView extends ConsumerWidget {
   }
 
   Widget _buildMacroItem(
-      String label, String current, String target, Color color) {
+      String label, double current, num target, Color color) {
+    final progress = target > 0 ? (current / target).clamp(0.0, 1.0) : 0.0;
     return Column(
       children: [
         Row(
@@ -433,7 +483,7 @@ class HomeView extends ConsumerWidget {
         const SizedBox(height: 4),
         RichText(
           text: TextSpan(
-            text: current,
+            text: '${current.round()}g',
             style: const TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w700,
@@ -441,7 +491,7 @@ class HomeView extends ConsumerWidget {
             ),
             children: [
               TextSpan(
-                text: target,
+                text: '/ ${target.round()}g',
                 style: const TextStyle(
                   fontSize: 12,
                   color: AppTheme.textMuted,
@@ -451,11 +501,25 @@ class HomeView extends ConsumerWidget {
             ],
           ),
         ),
+        const SizedBox(height: 6),
+        SizedBox(
+          width: 72,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 5,
+              backgroundColor: const Color(0xFFF1F5F9),
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+            ),
+          ),
+        ),
       ],
     );
   }
 
   Widget _buildMealTile({
+    required VoidCallback onTap,
     required String title,
     required String subtitle,
     required String calories,
@@ -463,7 +527,10 @@ class HomeView extends ConsumerWidget {
     required IconData icon,
     required Color iconColor,
   }) {
-    return Container(
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -521,6 +588,7 @@ class HomeView extends ConsumerWidget {
           ),
         ],
       ),
+    ),
     );
   }
 }

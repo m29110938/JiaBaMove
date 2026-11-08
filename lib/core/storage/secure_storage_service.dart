@@ -136,6 +136,18 @@ class SecureStorageService {
     await _storage.write(key: _mealLogsKey, value: json);
   }
 
+  static const String _favoriteFoodsKey = 'jiaba_favorite_foods_json';
+
+  /// 讀取常吃食物清單 JSON
+  Future<String?> getFavoriteFoodsJson() async {
+    return await _storage.read(key: _favoriteFoodsKey);
+  }
+
+  /// 儲存常吃食物清單 JSON
+  Future<void> saveFavoriteFoodsJson(String json) async {
+    await _storage.write(key: _favoriteFoodsKey, value: json);
+  }
+
   /// 清除本 App 存於 Keychain 的所有資料 (API Key、個人資料、課表、飲食紀錄)
   Future<void> deleteAll() async {
     await _storage.deleteAll();

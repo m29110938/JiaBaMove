@@ -1,21 +1,54 @@
+import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../fitness_recommendations/presentation/views/fitness_recommendations_view.dart';
 import '../../../home/presentation/views/home_view.dart';
 import '../../../profile/presentation/views/profile_view.dart';
+import '../../../vision_nutrition/presentation/controllers/meal_log_controller.dart';
 import '../../../vision_nutrition/presentation/views/nutrition_camera_view.dart';
 
 /// 主應用四標籤頁導航外框
-class MainNavigationScreen extends StatefulWidget {
+class MainNavigationScreen extends ConsumerStatefulWidget {
   const MainNavigationScreen({super.key});
 
   @override
-  State<MainNavigationScreen> createState() => _MainNavigationScreenState();
+  ConsumerState<MainNavigationScreen> createState() =>
+      _MainNavigationScreenState();
 }
 
-class _MainNavigationScreenState extends State<MainNavigationScreen> {
+class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen>
+    with WidgetsBindingObserver {
   int _currentIndex = 0;
+
+  /// 前景時每分鐘檢查一次是否跨日
+  Timer? _dayCheckTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _dayCheckTimer =
+        Timer.periodic(const Duration(minutes: 1), (_) => _refreshToday());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _dayCheckTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // App 從背景回到前景 (可能已過午夜)
+    if (state == AppLifecycleState.resumed) _refreshToday();
+  }
+
+  void _refreshToday() {
+    ref.read(mealLogControllerProvider.notifier).refreshToday();
+  }
 
   final List<Widget> _pages = const [
     HomeView(),
