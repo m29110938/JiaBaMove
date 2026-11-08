@@ -1,0 +1,69 @@
+name: JiaBaMove CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  analyze_and_test:
+    name: Flutter Analyze, Zero-Secret Check & Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.7'
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Security Check: Zero-Secret & Zero-PII Scan
+        run: |
+          echo "Scanning codebase for hardcoded API keys, tokens, or PII..."
+          # 檢查是否有明文 Gemini/OpenAI API Key
+          if grep -rnEI 'AIza[0-9A-Za-z-_]{35}|sk-[a-zA-Z0-9]{32,}' lib/ ; then
+            echo "::error::Found potential hardcoded API key in lib/! Build rejected."
+            exit 1
+          fi
+          # 檢查是否有本機私人使用者絕對路徑
+          if grep -rnEI '/Users/[a-zA-Z0-9._-]+/|C:\\\\Users\\\\[a-zA-Z0-9._-]+' lib/ ; then
+            echo "::error::Found potential hardcoded host private path in lib/! Build rejected."
+            exit 1
+          fi
+          echo "Zero-Secret security scan passed!"
+
+      - name: Static Code Analysis (flutter analyze)
+        run: flutter analyze
+
+      - name: Run Unit & Widget Tests
+        run: flutter test --coverage
+
+      - name: Build Web Application
+        run: flutter build web --release
+
+  ios_validation:
+    name: iOS Build & Structure Check
+    runs-on: macos-14
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.7'
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Validate iOS Build (No Codesign)
+        run: flutter build ios --config-only --no-codesign

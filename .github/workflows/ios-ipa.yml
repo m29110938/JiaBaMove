@@ -1,0 +1,67 @@
+name: Build Unsigned iOS IPA
+
+# 產出未簽名的 .ipa，供使用者以 Sideloadly / AltStore 搭配自己的免費 Apple ID 簽名安裝。
+# 觸發方式：
+#   1. 推送 v* 標籤 (例如 v1.0.0) → 建置並自動附加到 GitHub Release
+#   2. Actions 頁面手動執行 (workflow_dispatch) → 建置並上傳為 Artifact
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build_ipa:
+    name: Build unsigned IPA
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.7'
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Run Tests
+        run: flutter test
+
+      - name: Build iOS (Release, No Codesign)
+        run: flutter build ios --release --no-codesign
+
+      - name: Package IPA
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
+            VERSION="build-${GITHUB_RUN_NUMBER}"
+          fi
+          IPA_NAME="JiaBaMove-${VERSION}-unsigned.ipa"
+          rm -rf Payload
+          mkdir Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/
+          zip -qry "${IPA_NAME}" Payload
+          echo "IPA_NAME=${IPA_NAME}" >> "$GITHUB_ENV"
+          ls -lh "${IPA_NAME}"
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.IPA_NAME }}
+          path: ${{ env.IPA_NAME }}
+          retention-days: 30
+
+      - name: Attach IPA to GitHub Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.IPA_NAME }}
+          generate_release_notes: true
