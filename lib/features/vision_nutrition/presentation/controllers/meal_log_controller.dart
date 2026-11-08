@@ -1,0 +1,140 @@
+import 'dart:convert';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/storage/secure_storage_service.dart';
+import '../../domain/entities/meal_log_entity.dart';
+import '../../domain/entities/nutrition_analysis_entity.dart';
+
+/// 飲食紀錄狀態
+class MealLogState {
+  const MealLogState({
+    required this.logs,
+    required this.todayString,
+    this.isLoaded = false,
+  });
+
+  /// 所有保留中的紀錄 (依時間由舊到新)
+  final List<MealLogEntity> logs;
+  final String todayString;
+  final bool isLoaded;
+
+  /// 今日紀錄 (依時間由舊到新)
+  List<MealLogEntity> get todayLogs =>
+      logs.where((m) => m.dateString == todayString).toList();
+
+  double get todayCalories => _sum((m) => m.calories);
+  double get todayProtein => _sum((m) => m.protein);
+  double get todayCarbs => _sum((m) => m.carbs);
+  double get todayFat => _sum((m) => m.fat);
+
+  double _sum(double Function(MealLogEntity) pick) =>
+      todayLogs.fold(0.0, (acc, m) => acc + pick(m));
+
+  MealLogState copyWith({
+    List<MealLogEntity>? logs,
+    String? todayString,
+    bool? isLoaded,
+  }) {
+    return MealLogState(
+      logs: logs ?? this.logs,
+      todayString: todayString ?? this.todayString,
+      isLoaded: isLoaded ?? this.isLoaded,
+    );
+  }
+}
+
+final mealLogControllerProvider =
+    StateNotifierProvider<MealLogNotifier, MealLogState>((ref) {
+  return MealLogNotifier();
+});
+
+class MealLogNotifier extends StateNotifier<MealLogState> {
+  MealLogNotifier({
+    SecureStorageService? storageService,
+    DateTime Function()? clock,
+  })  : _storage = storageService ?? SecureStorageService(),
+        _clock = clock ?? DateTime.now,
+        super(MealLogState(
+          logs: const [],
+          todayString: MealLogEntity.formatDate((clock ?? DateTime.now)()),
+        )) {
+    _loadFuture = _load();
+  }
+
+  /// 紀錄保留天數 (避免存儲無限成長)
+  static const int retentionDays = 90;
+
+  final SecureStorageService _storage;
+  final DateTime Function() _clock;
+  late final Future<void> _loadFuture;
+
+  /// 等待初次載入完成 (測試與寫入前使用)
+  Future<void> get ready => _loadFuture;
+
+  Future<void> _load() async {
+    List<MealLogEntity> loaded = const [];
+    try {
+      final jsonStr = await _storage.getMealLogsJson();
+      if (jsonStr != null && jsonStr.isNotEmpty) {
+        final raw = jsonDecode(jsonStr) as List<dynamic>;
+        loaded = raw
+            .whereType<Map<String, dynamic>>()
+            .map(MealLogEntity.fromJson)
+            .toList();
+      }
+    } catch (_) {
+      // 資料損毀時以空清單起步，不讓 App 崩潰
+    }
+    if (!mounted) return;
+    state = state.copyWith(
+      logs: _prune(loaded),
+      todayString: MealLogEntity.formatDate(_clock()),
+      isLoaded: true,
+    );
+  }
+
+  /// 跨日時更新今日日期 (App 長時間開著時)
+  void refreshToday() {
+    final today = MealLogEntity.formatDate(_clock());
+    if (today != state.todayString) {
+      state = state.copyWith(todayString: today);
+    }
+  }
+
+  /// 將 AI 分析結果加入今日紀錄
+  Future<MealLogEntity> addFromAnalysis(NutritionAnalysisEntity analysis) async {
+    await _loadFuture;
+    final entry = MealLogEntity.fromAnalysis(analysis, loggedAt: _clock());
+    state = state.copyWith(
+      logs: _prune([...state.logs, entry]),
+      todayString: entry.dateString,
+    );
+    await _persist();
+    return entry;
+  }
+
+  /// 刪除一筆紀錄
+  Future<void> remove(String id) async {
+    await _loadFuture;
+    state = state.copyWith(
+      logs: state.logs.where((m) => m.id != id).toList(),
+    );
+    await _persist();
+  }
+
+  List<MealLogEntity> _prune(List<MealLogEntity> logs) {
+    final cutoff = _clock().subtract(const Duration(days: retentionDays));
+    final kept = logs.where((m) => m.loggedAt.isAfter(cutoff)).toList()
+      ..sort((a, b) => a.loggedAt.compareTo(b.loggedAt));
+    return kept;
+  }
+
+  Future<void> _persist() async {
+    try {
+      await _storage.saveMealLogsJson(
+        jsonEncode(state.logs.map((m) => m.toJson()).toList()),
+      );
+    } catch (_) {
+      // 寫入失敗時保留記憶體狀態，下次寫入再嘗試
+    }
+  }
+}

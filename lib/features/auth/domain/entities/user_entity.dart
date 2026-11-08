@@ -14,6 +14,14 @@ class UserEntity {
   final String? photoUrl;
   final bool isGuest;
 
+  /// 本機使用者 (資料僅存於此裝置，無雲端帳號)
+  factory UserEntity.local() {
+    return const UserEntity(
+      id: 'local_user',
+      displayName: '健身夥伴',
+    );
+  }
+
   /// 建立訪客使用者實體
   factory UserEntity.guest() {
     return UserEntity(

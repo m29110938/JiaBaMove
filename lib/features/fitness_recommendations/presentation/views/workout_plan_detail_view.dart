@@ -18,9 +18,6 @@ class WorkoutPlanDetailView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final workoutState = ref.watch(workoutControllerProvider);
-    final isCompleted = workoutState.isCompleted(plan.id);
-
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
@@ -98,36 +95,6 @@ class WorkoutPlanDetailView extends ConsumerWidget {
                                   ),
                                 ),
                               ),
-                              const Spacer(),
-                              if (isCompleted)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.accentGreen.withValues(alpha: 0.12),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Row(
-                                    children: [
-                                      Icon(
-                                        CupertinoIcons.checkmark_seal_fill,
-                                        size: 14,
-                                        color: AppTheme.accentGreen,
-                                      ),
-                                      SizedBox(width: 4),
-                                      Text(
-                                        '今日已完成',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w700,
-                                          color: AppTheme.accentGreen,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
                             ],
                           ),
                           const SizedBox(height: 12),
@@ -159,14 +126,6 @@ class WorkoutPlanDetailView extends ConsumerWidget {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceAround,
                               children: [
-                                _buildSummaryMetric(
-                                  icon: CupertinoIcons.flame_fill,
-                                  iconColor: const Color(0xFFF97316),
-                                  value: '${plan.estimatedCalories}',
-                                  unit: 'kcal',
-                                  label: '預估消耗',
-                                ),
-                                _buildSummaryDivider(),
                                 _buildSummaryMetric(
                                   icon: CupertinoIcons.stopwatch_fill,
                                   iconColor: const Color(0xFF3B82F6),
@@ -294,43 +253,21 @@ class WorkoutPlanDetailView extends ConsumerWidget {
               child: SizedBox(
                 width: double.infinity,
                 height: 52,
-                child: ElevatedButton(
-                  onPressed: isCompleted
-                      ? null
-                      : () => _handleComplete(context, ref),
+                child: ElevatedButton.icon(
+                  onPressed: () => _handleAddToDailyMenu(context, ref),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: plan.accentColor,
                     foregroundColor: Colors.white,
-                    disabledBackgroundColor: const Color(0xFFF1F5F9),
-                    disabledForegroundColor: AppTheme.accentGreen,
-                    elevation: isCompleted ? 0 : 2,
+                    elevation: 2,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
-                  child: isCompleted
-                      ? const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(CupertinoIcons.checkmark_alt_circle_fill, size: 20),
-                            SizedBox(width: 8),
-                            Text(
-                              '今日已完成打卡',
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                            ),
-                          ],
-                        )
-                      : Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(CupertinoIcons.checkmark_circle, size: 20),
-                            const SizedBox(width: 8),
-                            Text(
-                              '打卡完成訓練 (+${plan.estimatedCalories} kcal)',
-                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                            ),
-                          ],
-                        ),
+                  icon: const Icon(CupertinoIcons.add_circled_solid, size: 20),
+                  label: Text(
+                    '加入今日菜單 (${plan.exercises.length} 項動作)',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  ),
                 ),
               ),
             ),
@@ -519,53 +456,53 @@ class WorkoutPlanDetailView extends ConsumerWidget {
     );
   }
 
-  void _handleComplete(BuildContext context, WidgetRef ref) {
-    HapticFeedback.heavyImpact();
-    ref.read(workoutControllerProvider.notifier).completeWorkout(plan);
+  Future<void> _handleAddToDailyMenu(BuildContext context, WidgetRef ref) async {
+    final notifier = ref.read(workoutControllerProvider.notifier);
+    final isAlreadyAdded = notifier.isPlanAlreadyAddedToDaily(plan);
 
-    showCupertinoDialog(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('🎉 今日鍛鍊達成！'),
-        content: Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Column(
-            children: [
-              Text('恭喜您完成「${plan.title}」！'),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppTheme.accentGreen.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  '已記錄消耗熱量 +${plan.estimatedCalories} kcal',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.accentGreen,
-                  ),
-                ),
+    if (isAlreadyAdded) {
+      final shouldAdd = await showDialog<bool>(
+        context: context,
+        builder: (dCtx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('再次加入今日菜單？', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+          content: Text('今日菜單中已有「${plan.title}」的訓練動作，是否要再次追加？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dCtx).pop(false),
+              child: const Text('取消', style: TextStyle(color: Color(0xFF64748B))),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primaryOrange,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
-              const SizedBox(height: 6),
-              const Text(
-                '運動熱量已同步更新至今日紀錄首頁！',
-                style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
-              ),
-            ],
-          ),
+              onPressed: () => Navigator.of(dCtx).pop(true),
+              child: const Text('確定追加', style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
+          ],
         ),
-        actions: [
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            onPressed: () {
-              Navigator.of(ctx).pop();
-            },
-            child: const Text('太棒了，繼續保持'),
-          ),
-        ],
-      ),
-    );
+      );
+
+      if (shouldAdd != true) return;
+    }
+
+    HapticFeedback.mediumImpact();
+    await notifier.addPlanExercisesToDailyWorkout(plan);
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('已成功將「${plan.title}」的 ${plan.exercises.length} 項動作加入今日菜單！'),
+          backgroundColor: AppTheme.accentGreen,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+    }
   }
 }

@@ -1,11 +1,11 @@
 import 'dart:convert';
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
-import 'package:path_provider/path_provider.dart';
 import '../../../../core/constants/api_constants.dart';
 import '../../../../core/network/dio_client.dart';
 import '../../../../core/storage/secure_storage_service.dart';
+import '../../../../core/utils/image_metadata.dart';
 import '../models/nutrition_analysis_model.dart';
 
 /// Gemini 1.5 Flash 視覺營養分析客戶端
@@ -41,53 +41,47 @@ class GeminiVisionService {
 }
 ''';
 
-  /// 圖片壓縮處理：長邊上限 1024px，品質 75%
-  Future<List<int>> compressImage(File imageFile) async {
-    final bytes = await imageFile.readAsBytes();
+  /// 圖片壓縮處理：長邊上限 1024px，品質 75% (記憶體純處理，相容 Web 與 iOS)
+  ///
+  /// 隱私：一律重新編碼 (不保留 EXIF)，並再移除一次 JPEG 中繼資料，
+  /// 確保 GPS 位置、拍攝時間、裝置型號不會隨照片送出。
+  Future<List<int>> compressImageBytes(List<int> bytes) async {
+    final inputBytes = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
+    var output = inputBytes;
 
-    // 若圖片原本就很小 (小於 200KB)，且符合尺寸可直接使用
-    if (bytes.lengthInBytes < 200 * 1024) {
-      return bytes;
-    }
-
-    String? tempFilePath;
     try {
-      final tempDir = await getTemporaryDirectory();
-      tempFilePath =
-          '${tempDir.path}/compressed_${DateTime.now().millisecondsSinceEpoch}.jpg';
-
-      final compressedXFile = await FlutterImageCompress.compressAndGetFile(
-        imageFile.absolute.path,
-        tempFilePath,
+      final compressed = await FlutterImageCompress.compressWithList(
+        inputBytes,
         minWidth: ApiConstants.imageMaxSide,
         minHeight: ApiConstants.imageMaxSide,
         quality: ApiConstants.imageQuality,
         format: CompressFormat.jpeg,
+        keepExif: false,
       );
 
-      if (compressedXFile != null) {
-        return await compressedXFile.readAsBytes();
+      if (compressed.isNotEmpty) {
+        output = compressed;
       }
     } catch (_) {
-      // 若壓縮外掛在特定環境失敗，回退使用原始 byte
-    } finally {
-      // 資安防護：落實 Security Checklist，暫存圖檔使用完畢後保證銷毀，避免隱私外洩
-      if (tempFilePath != null) {
-        try {
-          final file = File(tempFilePath);
-          if (file.existsSync()) {
-            file.deleteSync();
-          }
-        } catch (_) {}
-      }
+      // 若壓縮外掛在特定環境未註冊，回退使用原始 byte (下方仍會移除中繼資料)
     }
 
-    return bytes;
+    return stripJpegMetadata(output);
   }
 
-  /// 接收本機圖片檔案，壓縮後發送至 Gemini 1.5 Flash 進行結構化營養辨識
-  Future<NutritionAnalysisModel> analyzeFoodImage(File imageFile) async {
-    // 1. 從 Keychain 取得 API Key 並清洗引號與空白
+  /// 相容別名方法：壓縮圖片
+  Future<List<int>> compressImage(List<int> bytes) async {
+    return compressImageBytes(bytes);
+  }
+
+  /// 接收圖片位元組 (Bytes)，壓縮後發送至 Gemini 1.5 Flash 進行結構化營養辨識
+  Future<NutritionAnalysisModel> analyzeFoodImage(List<int> imageBytes) async {
+    return analyzeFoodImageBytes(imageBytes);
+  }
+
+  /// 接收圖片位元組 (Bytes)，發送至 Gemini 進行結構化營養辨識
+  Future<NutritionAnalysisModel> analyzeFoodImageBytes(List<int> imageBytes) async {
+    // 1. 從 Keychain / SecureStorage 取得 API Key 並清洗引號與空白
     final rawApiKey = await _storage.getGeminiApiKey();
     if (rawApiKey == null) {
       throw StateError('尚未設定 Gemini API Key，請先至設定頁配置！');
@@ -99,10 +93,10 @@ class GeminiVisionService {
     }
 
     // 2. 進行圖片標準壓縮處理
-    final imageBytes = await compressImage(imageFile);
+    final compressedBytes = await compressImageBytes(imageBytes);
 
     // 3. 轉為 Base64 字串
-    final base64Image = base64Encode(imageBytes);
+    final base64Image = base64Encode(compressedBytes);
 
     // 4. 構建 Gemini 1.5 Flash 請求酬載 (強制 JSON 結構化輸出)
     final payload = {

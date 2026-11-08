@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +9,7 @@ import '../../../settings/presentation/controllers/api_key_controller.dart';
 import '../../../settings/presentation/views/api_key_settings_view.dart';
 import '../../data/datasources/gemini_vision_service.dart';
 import '../../data/models/nutrition_analysis_model.dart';
+import '../controllers/meal_log_controller.dart';
 
 final geminiVisionServiceProvider = Provider<GeminiVisionService>((ref) {
   return GeminiVisionService(
@@ -27,10 +28,33 @@ class NutritionCameraView extends ConsumerStatefulWidget {
 
 class _NutritionCameraViewState extends ConsumerState<NutritionCameraView> {
   final ImagePicker _picker = ImagePicker();
-  File? _selectedImage;
+  Uint8List? _selectedImageBytes;
   bool _isAnalyzing = false;
   NutritionAnalysisModel? _analysisResult;
   String? _errorMessage;
+  bool _isSavingToLog = false;
+  bool _savedToLog = false;
+
+  /// 將目前分析結果加入今日飲食紀錄
+  Future<void> _saveResultToLog() async {
+    final result = _analysisResult;
+    if (result == null || !result.isFood || _savedToLog || _isSavingToLog) {
+      return;
+    }
+    setState(() => _isSavingToLog = true);
+    await ref.read(mealLogControllerProvider.notifier).addFromAnalysis(result);
+    if (!mounted) return;
+    setState(() {
+      _isSavingToLog = false;
+      _savedToLog = true;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('已將「${result.foodName}」加入今日紀錄 🍱'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
 
   /// 拍照或選取照片
   Future<void> _pickAndAnalyzeImage(ImageSource source) async {
@@ -48,19 +72,24 @@ class _NutritionCameraViewState extends ConsumerState<NutritionCameraView> {
         source: source,
         maxWidth: 1920,
         maxHeight: 1920,
+        // 不讀取照片完整中繼資料 (GPS 等)，iOS 上也不需要完整相簿權限
+        requestFullMetadata: false,
       );
 
       if (pickedFile == null) return;
 
+      final bytes = await pickedFile.readAsBytes();
+
       setState(() {
-        _selectedImage = File(pickedFile.path);
+        _selectedImageBytes = bytes;
         _isAnalyzing = true;
         _errorMessage = null;
         _analysisResult = null;
+        _savedToLog = false;
       });
 
       final visionService = ref.read(geminiVisionServiceProvider);
-      final result = await visionService.analyzeFoodImage(_selectedImage!);
+      final result = await visionService.analyzeFoodImageBytes(_selectedImageBytes!);
 
       if (mounted) {
         setState(() {
@@ -188,10 +217,10 @@ class _NutritionCameraViewState extends ConsumerState<NutritionCameraView> {
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(color: const Color(0xFFE2E8F0)),
                 ),
-                child: _selectedImage != null
+                child: _selectedImageBytes != null
                     ? ClipRRect(
                         borderRadius: BorderRadius.circular(20),
-                        child: Image.file(_selectedImage!, fit: BoxFit.cover),
+                        child: Image.memory(_selectedImageBytes!, fit: BoxFit.cover),
                       )
                     : Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -453,6 +482,34 @@ class _NutritionCameraViewState extends ConsumerState<NutritionCameraView> {
               ],
             ),
           ),
+
+          // 加入今日紀錄
+          if (result.isFood) ...[
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                key: const Key('save_meal_log_button'),
+                style: _savedToLog
+                    ? ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.accentGreen,
+                        disabledBackgroundColor:
+                            AppTheme.accentGreen.withValues(alpha: 0.85),
+                        disabledForegroundColor: Colors.white,
+                      )
+                    : null,
+                onPressed:
+                    (_savedToLog || _isSavingToLog) ? null : _saveResultToLog,
+                icon: Icon(
+                  _savedToLog
+                      ? CupertinoIcons.checkmark_alt_circle_fill
+                      : CupertinoIcons.plus_circle_fill,
+                  size: 20,
+                ),
+                label: Text(_savedToLog ? '已加入今日紀錄' : '加入今日紀錄'),
+              ),
+            ),
+          ],
         ],
       ),
     );

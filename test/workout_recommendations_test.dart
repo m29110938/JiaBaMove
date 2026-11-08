@@ -61,30 +61,31 @@ void main() {
       expect(notifier.state.filteredPlans.length, equals(14));
     });
 
-    test('WorkoutNotifier completeWorkout accumulates calories and prevents duplicate check-in', () {
+    test('WorkoutNotifier completeWorkout records completion and prevents duplicate check-in', () {
       final notifier = WorkoutNotifier();
-      final planA = WorkoutPlanEntity.defaultPlans[0]; // 250 kcal
-      final planB = WorkoutPlanEntity.defaultPlans[1]; // 290 kcal
+      final planA = WorkoutPlanEntity.defaultPlans[0];
+      final planB = WorkoutPlanEntity.defaultPlans[1];
 
       // Complete Plan A
       final resA1 = notifier.completeWorkout(planA);
       expect(resA1, isTrue);
       expect(notifier.state.completedWorkoutIds, contains(planA.id));
-      expect(notifier.state.totalCaloriesBurned, equals(250));
+      expect(notifier.state.totalCaloriesBurned, equals(0));
       expect(notifier.state.isCompleted(planA.id), isTrue);
 
       // Duplicate Complete Plan A
       final resA2 = notifier.completeWorkout(planA);
       expect(resA2, isFalse);
-      expect(notifier.state.totalCaloriesBurned, equals(250));
+      expect(notifier.state.totalCaloriesBurned, equals(0));
 
       // Complete Plan B
       final resB = notifier.completeWorkout(planB);
       expect(resB, isTrue);
-      expect(notifier.state.totalCaloriesBurned, equals(250 + 290));
+      expect(notifier.state.completedWorkoutIds, contains(planB.id));
+      expect(notifier.state.totalCaloriesBurned, equals(0));
     });
 
-    testWidgets('MainNavigationScreen contains 4 tabs including "健身建議"', (tester) async {
+    testWidgets('MainNavigationScreen contains 4 tabs including "健身菜單"', (tester) async {
       await tester.pumpWidget(
         const ProviderScope(
           child: MaterialApp(
@@ -97,12 +98,12 @@ void main() {
 
       // Verify all 4 bottom tabs
       expect(find.text('今日紀錄'), findsOneWidget);
-      expect(find.text('健身建議'), findsOneWidget);
+      expect(find.text('健身菜單'), findsOneWidget);
       expect(find.text('拍照分析'), findsOneWidget);
       expect(find.text('會員中心'), findsOneWidget);
 
-      // Tap on 健身建議
-      await tester.tap(find.text('健身建議'));
+      // Tap on 健身菜單
+      await tester.tap(find.text('健身菜單'));
       await tester.pumpAndSettle();
 
       // Verify FitnessRecommendationsView is displayed
@@ -128,6 +129,7 @@ void main() {
       expect(find.text('14 個訓練方案'), findsOneWidget);
 
       // Tap "居家徒手" category selector (the first match in the horizontal pills)
+      await tester.ensureVisible(find.text('居家徒手').first);
       await tester.tap(find.text('居家徒手').first);
       await tester.pumpAndSettle();
 
@@ -137,7 +139,7 @@ void main() {
       expect(find.text('客廳徒手高效爆汗間歇'), findsOneWidget);
     });
 
-    testWidgets('WorkoutPlanDetailView displays plan details and completes workout on check-in tap',
+    testWidgets('WorkoutPlanDetailView displays plan details and adds all exercises to daily menu on button tap',
         (tester) async {
       final plan = WorkoutPlanEntity.defaultPlans[0];
 
@@ -157,22 +159,14 @@ void main() {
       expect(find.text('坐姿機械胸推'), findsOneWidget);
       expect(find.text('蝴蝶機夾胸'), findsOneWidget);
 
-      // Tap "打卡完成本次訓練"
-      final button = find.text('打卡完成訓練 (+250 kcal)');
+      // Tap "加入今日菜單 (4 項動作)"
+      final button = find.text('加入今日菜單 (${plan.exercises.length} 項動作)');
       expect(button, findsOneWidget);
       await tester.tap(button);
       await tester.pumpAndSettle();
 
-      // Verify celebration dialog appears
-      expect(find.text('🎉 今日鍛鍊達成！'), findsOneWidget);
-      expect(find.text('太棒了，繼續保持'), findsOneWidget);
-
-      // Tap dialog confirm
-      await tester.tap(find.text('太棒了，繼續保持'));
-      await tester.pumpAndSettle();
-
-      // Button now says "今日已完成打卡"
-      expect(find.text('今日已完成打卡'), findsOneWidget);
+      // Verify SnackBar appears confirming addition
+      expect(find.text('已成功將「${plan.title}」的 ${plan.exercises.length} 項動作加入今日菜單！'), findsOneWidget);
     });
   });
 }

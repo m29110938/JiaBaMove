@@ -5,6 +5,8 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../auth/presentation/controllers/auth_controller.dart';
 import '../../../fitness_recommendations/presentation/controllers/workout_controller.dart';
 import '../../../profile/presentation/controllers/profile_controller.dart';
+import '../../../vision_nutrition/domain/entities/meal_log_entity.dart';
+import '../../../vision_nutrition/presentation/controllers/meal_log_controller.dart';
 
 /// 今日總覽與飲食打卡首頁
 class HomeView extends ConsumerWidget {
@@ -15,14 +17,14 @@ class HomeView extends ConsumerWidget {
     final user = ref.watch(authControllerProvider).user;
     final profile = ref.watch(profileControllerProvider).profile;
     final workoutState = ref.watch(workoutControllerProvider);
-    final burnedCalories = workoutState.totalCaloriesBurned;
-
     final targetCalories = profile?.targetCalories ?? 2200;
     final proteinTarget = profile?.proteinGrams ?? 140;
     final carbsTarget = profile?.carbsGrams ?? 250;
     final fatTarget = profile?.fatGrams ?? 65;
-    const consumedCalories = 1420;
-    final remainingCalories = (targetCalories - consumedCalories + burnedCalories).clamp(0, 9999);
+    final mealState = ref.watch(mealLogControllerProvider);
+    final todayMeals = mealState.todayLogs;
+    final consumedCalories = mealState.todayCalories.round();
+    final remainingCalories = (targetCalories - consumedCalories).clamp(0, 9999);
 
     return Scaffold(
       appBar: AppBar(
@@ -131,26 +133,14 @@ class HomeView extends ConsumerWidget {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
+                            Text(
                               '已攝取 $consumedCalories kcal',
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w800,
                                 color: AppTheme.textDark,
                               ),
                             ),
-                            if (burnedCalories > 0)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 2),
-                                child: Text(
-                                  '運動燃燒 +$burnedCalories kcal',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFFF97316),
-                                  ),
-                                ),
-                              ),
                           ],
                         ),
                         Text(
@@ -182,19 +172,19 @@ class HomeView extends ConsumerWidget {
                       children: [
                         _buildMacroItem(
                           '蛋白質',
-                          '92g',
+                          '${mealState.todayProtein.round()}g',
                           '/ ${proteinTarget}g',
                           const Color(0xFF3B82F6),
                         ),
                         _buildMacroItem(
                           '碳水',
-                          '165g',
+                          '${mealState.todayCarbs.round()}g',
                           '/ ${carbsTarget}g',
                           AppTheme.primaryOrange,
                         ),
                         _buildMacroItem(
                           '脂肪',
-                          '45g',
+                          '${mealState.todayFat.round()}g',
                           '/ ${fatTarget}g',
                           const Color(0xFFEAB308),
                         ),
@@ -207,10 +197,10 @@ class HomeView extends ConsumerWidget {
               const SizedBox(height: 24),
 
               // 3. 今日餐點紀錄清單
-              const Row(
+              Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
+                  const Text(
                     '今日餐點動態',
                     style: TextStyle(
                       fontSize: 16,
@@ -219,8 +209,8 @@ class HomeView extends ConsumerWidget {
                     ),
                   ),
                   Text(
-                    '2 餐已紀錄',
-                    style: TextStyle(
+                    '${todayMeals.length} 餐已紀錄',
+                    style: const TextStyle(
                       fontSize: 13,
                       color: AppTheme.textMuted,
                     ),
@@ -229,23 +219,46 @@ class HomeView extends ConsumerWidget {
               ),
               const SizedBox(height: 12),
 
-              _buildMealTile(
-                title: '早午餐：香煎舒肥雞胸肉佐地瓜',
-                subtitle: '蛋白質 42g • 碳水 55g • 脂肪 8g',
-                calories: '520 kcal',
-                time: '11:30 AM',
-                icon: CupertinoIcons.sun_max_fill,
-                iconColor: const Color(0xFFF59E0B),
-              ),
-              const SizedBox(height: 10),
-              _buildMealTile(
-                title: '下午加餐：無糖黑豆漿加乳清',
-                subtitle: '蛋白質 35g • 碳水 12g • 脂肪 5g',
-                calories: '260 kcal',
-                time: '03:45 PM',
-                icon: CupertinoIcons.drop_fill,
-                iconColor: const Color(0xFF3B82F6),
-              ),
+              if (todayMeals.isEmpty)
+                _buildEmptyMealsHint()
+              else
+                for (final meal in todayMeals) ...[
+                  Dismissible(
+                    key: ValueKey(meal.id),
+                    direction: DismissDirection.endToStart,
+                    background: Container(
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      decoration: BoxDecoration(
+                        color: AppTheme.errorRed.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Icon(CupertinoIcons.trash,
+                          color: AppTheme.errorRed),
+                    ),
+                    onDismissed: (_) {
+                      ref
+                          .read(mealLogControllerProvider.notifier)
+                          .remove(meal.id);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('已刪除「${meal.foodName}」'),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    },
+                    child: _buildMealTile(
+                      title: '${meal.mealType.label}：${meal.foodName}',
+                      subtitle:
+                          '蛋白質 ${meal.protein.round()}g • 碳水 ${meal.carbs.round()}g • 脂肪 ${meal.fat.round()}g',
+                      calories: '${meal.calories.round()} kcal',
+                      time: _formatTime(meal.loggedAt),
+                      icon: _iconFor(meal.mealType),
+                      iconColor: _colorFor(meal.mealType),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
 
               // 4. 今日運動成果卡片 (當有打卡運動時呈現)
               if (workoutState.completedWorkoutIds.isNotEmpty) ...[
@@ -293,22 +306,22 @@ class HomeView extends ConsumerWidget {
                         ),
                       ),
                       const SizedBox(width: 14),
-                      Expanded(
+                      const Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              '持續累積後燃效應！',
+                            Text(
+                              '持續累積力量與肌力！',
                               style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w700,
                                 color: AppTheme.textDark,
                               ),
                             ),
-                            const SizedBox(height: 2),
+                            SizedBox(height: 2),
                             Text(
-                              '今日運動共計消耗 $burnedCalories 大卡，離身材目標更進一步！',
-                              style: const TextStyle(
+                              '今日已順利完成訓練打卡，持之以恆最有力！',
+                              style: TextStyle(
                                 fontSize: 12,
                                 color: AppTheme.textMuted,
                               ),
@@ -325,6 +338,74 @@ class HomeView extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  Widget _buildEmptyMealsHint() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 22),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: const Column(
+        children: [
+          Icon(CupertinoIcons.camera, color: AppTheme.textMuted, size: 26),
+          SizedBox(height: 8),
+          Text(
+            '今天還沒有紀錄任何一餐',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.textDark,
+            ),
+          ),
+          SizedBox(height: 4),
+          Text(
+            '到「拍照分析」拍下餐點，按「加入今日紀錄」就會出現在這裡',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _formatTime(DateTime t) {
+    final hour12 = t.hour % 12 == 0 ? 12 : t.hour % 12;
+    final period = t.hour < 12 ? 'AM' : 'PM';
+    return '${hour12.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')} $period';
+  }
+
+  static IconData _iconFor(MealType type) {
+    switch (type) {
+      case MealType.breakfast:
+        return CupertinoIcons.sunrise_fill;
+      case MealType.lunch:
+        return CupertinoIcons.sun_max_fill;
+      case MealType.afternoonSnack:
+        return CupertinoIcons.drop_fill;
+      case MealType.dinner:
+        return CupertinoIcons.moon_fill;
+      case MealType.lateNight:
+        return CupertinoIcons.moon_stars_fill;
+    }
+  }
+
+  static Color _colorFor(MealType type) {
+    switch (type) {
+      case MealType.breakfast:
+        return const Color(0xFFF59E0B);
+      case MealType.lunch:
+        return AppTheme.primaryOrange;
+      case MealType.afternoonSnack:
+        return const Color(0xFF3B82F6);
+      case MealType.dinner:
+        return const Color(0xFF8B5CF6);
+      case MealType.lateNight:
+        return const Color(0xFF475569);
+    }
   }
 
   Widget _buildMacroItem(

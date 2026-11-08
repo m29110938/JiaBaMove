@@ -3,8 +3,6 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/constants/app_strings.dart';
 import 'core/theme/app_theme.dart';
-import 'features/auth/presentation/controllers/auth_controller.dart';
-import 'features/auth/presentation/views/login_view.dart';
 import 'features/main/presentation/views/main_navigation_screen.dart';
 
 void main() {
@@ -49,23 +47,51 @@ class JiaBaMoveApp extends StatelessWidget {
         }
         return const Locale('zh', 'TW');
       },
-      home: const AuthGate(),
+      builder: (context, child) {
+        if (child == null) return const SizedBox.shrink();
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            // 在大螢幕 (如桌面網頁版寬度 > 600px) 時，以優雅置中的手機畫布模式展示
+            if (constraints.maxWidth > 600) {
+              return Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF0F172A), Color(0xFF1E293B)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+                child: Center(
+                  child: Container(
+                    width: 460,
+                    height: constraints.maxHeight.clamp(600.0, 960.0),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(28),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.35),
+                          blurRadius: 36,
+                          offset: const Offset(0, 14),
+                        ),
+                      ],
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: MediaQuery(
+                      data: MediaQuery.of(context).copyWith(
+                        size: Size(460, constraints.maxHeight.clamp(600.0, 960.0)),
+                      ),
+                      child: child,
+                    ),
+                  ),
+                ),
+              );
+            }
+            return child;
+          },
+        );
+      },
+      home: const MainNavigationScreen(),
     );
-  }
-}
-
-/// 認證閘門：根據使用者登入狀態自動分流
-class AuthGate extends ConsumerWidget {
-  const AuthGate({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final authState = ref.watch(authControllerProvider);
-
-    if (authState.isAuthenticated) {
-      return const MainNavigationScreen();
-    }
-
-    return const LoginView();
   }
 }

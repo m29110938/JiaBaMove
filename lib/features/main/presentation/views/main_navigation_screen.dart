@@ -64,7 +64,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             BottomNavigationBarItem(
               icon: Icon(CupertinoIcons.flame),
               activeIcon: Icon(CupertinoIcons.flame_fill),
-              label: '健身建議',
+              label: '健身菜單',
             ),
             BottomNavigationBarItem(
               icon: Icon(CupertinoIcons.camera),

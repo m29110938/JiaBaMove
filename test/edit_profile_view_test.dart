@@ -44,6 +44,10 @@ void main() {
       // Verify removed tiles are NOT present
       expect(find.text('iOS Keychain 資安防護說明'), findsNothing);
       expect(find.text('身體數據與代謝目標'), findsNothing);
+
+      // 不再有登出，改為清除本機資料
+      expect(find.text('登出帳號'), findsNothing);
+      expect(find.text('清除本機所有資料'), findsOneWidget);
     });
 
     testWidgets(
@@ -76,8 +80,7 @@ void main() {
 
       // Check fields exist
       expect(find.text('修改會員資料'), findsOneWidget);
-      expect(find.text('dee@jiabamove.tw'), findsOneWidget);
-      expect(find.text('已綁定會員'), findsOneWidget);
+      expect(find.text('僅此裝置 (iOS Keychain)'), findsOneWidget);
 
       // Find TextFormField and enter new name
       final nameField = find.byType(TextFormField).first;

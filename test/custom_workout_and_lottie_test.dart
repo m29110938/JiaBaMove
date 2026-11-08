@@ -324,6 +324,7 @@ void main() {
       expect(find.byType(BodyPartGuidanceCard), findsNothing);
 
       // Tap '胸部' body part pill
+      await tester.ensureVisible(find.text('胸部').first);
       await tester.tap(find.text('胸部').first);
       await tester.pumpAndSettle();
 

@@ -3,6 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../auth/presentation/controllers/auth_controller.dart';
+import '../../../fitness_recommendations/presentation/controllers/rest_timer_controller.dart';
+import '../../../fitness_recommendations/presentation/controllers/workout_controller.dart';
+import '../../../settings/presentation/controllers/api_key_controller.dart';
+import '../../../vision_nutrition/presentation/controllers/meal_log_controller.dart';
 import '../../../settings/presentation/views/api_key_settings_view.dart';
 import '../controllers/profile_controller.dart';
 import 'edit_profile_view.dart';
@@ -18,7 +22,6 @@ class ProfileView extends ConsumerWidget {
     final user = authState.user;
     final profileState = ref.watch(profileControllerProvider);
     final profile = profileState.profile;
-    final authNotifier = ref.read(authControllerProvider.notifier);
 
     return Scaffold(
       appBar: AppBar(
@@ -105,7 +108,7 @@ class ProfileView extends ConsumerWidget {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            user?.email ?? '尚未綁定電子郵件',
+                            user?.email ?? '資料僅儲存於此裝置',
                             style: const TextStyle(
                               fontSize: 13,
                               color: AppTheme.textMuted,
@@ -329,8 +332,9 @@ class ProfileView extends ConsumerWidget {
 
               const SizedBox(height: 32),
 
-              // 登出按鈕
+              // 清除本機資料
               OutlinedButton.icon(
+                key: const Key('clear_local_data_button'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppTheme.errorRed,
                   minimumSize: const Size.fromHeight(50),
@@ -341,39 +345,66 @@ class ProfileView extends ConsumerWidget {
                     color: AppTheme.errorRed.withValues(alpha: 0.3),
                   ),
                 ),
-                onPressed: () async {
-                  final confirmed = await showCupertinoDialog<bool>(
-                    context: context,
-                    builder: (ctx) => CupertinoAlertDialog(
-                      title: const Text('登出確認'),
-                      content: const Text('確定要登出當前帳號嗎？'),
-                      actions: [
-                        CupertinoDialogAction(
-                          isDestructiveAction: true,
-                          onPressed: () => Navigator.of(ctx).pop(true),
-                          child: const Text('登出'),
-                        ),
-                        CupertinoDialogAction(
-                          isDefaultAction: true,
-                          onPressed: () => Navigator.of(ctx).pop(false),
-                          child: const Text('取消'),
-                        ),
-                      ],
-                    ),
-                  );
-
-                  if (confirmed == true) {
-                    await authNotifier.signOut();
-                  }
-                },
-                icon: const Icon(CupertinoIcons.square_arrow_left, size: 20),
-                label: const Text('登出帳號'),
+                onPressed: () => _confirmAndClearLocalData(context, ref),
+                icon: const Icon(CupertinoIcons.trash, size: 20),
+                label: const Text('清除本機所有資料'),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '所有資料只存在這支 iPhone，不會上傳到任何伺服器',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
               ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _confirmAndClearLocalData(
+      BuildContext context, WidgetRef ref) async {
+    final confirmed = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('清除本機所有資料？'),
+        content: const Text(
+          '將刪除 API Key、個人資料、自訂課表、訓練與飲食紀錄。\n此動作無法復原。',
+        ),
+        actions: [
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('全部清除'),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    await ref.read(secureStorageServiceProvider).deleteAll();
+
+    // 重新建立各功能狀態，使其從已清空的存儲重新載入
+    ref.invalidate(authControllerProvider);
+    ref.invalidate(profileControllerProvider);
+    ref.invalidate(workoutControllerProvider);
+    ref.invalidate(restTimerControllerProvider);
+    ref.invalidate(mealLogControllerProvider);
+    ref.invalidate(apiKeyControllerProvider);
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('已清除本機所有資料'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   Widget _buildSectionTitle(String title) {

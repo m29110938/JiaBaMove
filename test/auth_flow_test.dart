@@ -26,6 +26,13 @@ void main() {
       expect(user.displayName, equals('健美大師'));
     });
 
+    test('UserEntity.local 為本機使用者 (無信箱、非訪客)', () {
+      final user = UserEntity.local();
+      expect(user.id, 'local_user');
+      expect(user.email, isNull);
+      expect(user.isGuest, isFalse);
+    });
+
     test('Initial AuthState is unauthenticated', () {
       const initialState = AuthState.unauthenticated();
 

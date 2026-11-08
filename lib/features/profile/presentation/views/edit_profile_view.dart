@@ -81,8 +81,6 @@ class _EditProfileViewState extends ConsumerState<EditProfileView> {
 
   @override
   Widget build(BuildContext context) {
-    final user = ref.watch(authControllerProvider).user;
-
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
@@ -306,15 +304,15 @@ class _EditProfileViewState extends ConsumerState<EditProfileView> {
                   ),
                   child: Column(
                     children: [
-                      Row(
+                      const Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Row(
+                          Row(
                             children: [
-                              Icon(CupertinoIcons.mail, size: 18, color: Color(0xFF64748B)),
+                              Icon(CupertinoIcons.device_phone_portrait, size: 18, color: Color(0xFF64748B)),
                               SizedBox(width: 8),
                               Text(
-                                '綁定信箱',
+                                '資料儲存位置',
                                 style: TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
@@ -324,8 +322,8 @@ class _EditProfileViewState extends ConsumerState<EditProfileView> {
                             ],
                           ),
                           Text(
-                            user?.email ?? '訪客無信箱',
-                            style: const TextStyle(fontSize: 13, color: AppTheme.textMuted),
+                            '僅此裝置 (iOS Keychain)',
+                            style: TextStyle(fontSize: 13, color: AppTheme.textMuted),
                           ),
                         ],
                       ),
@@ -338,7 +336,7 @@ class _EditProfileViewState extends ConsumerState<EditProfileView> {
                               Icon(CupertinoIcons.shield_lefthalf_fill, size: 18, color: Color(0xFF64748B)),
                               SizedBox(width: 8),
                               Text(
-                                '會員身分',
+                                '雲端同步',
                                 style: TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
@@ -350,19 +348,15 @@ class _EditProfileViewState extends ConsumerState<EditProfileView> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                             decoration: BoxDecoration(
-                              color: user?.isGuest == true
-                                  ? const Color(0xFFF1F5F9)
-                                  : AppTheme.accentGreen.withValues(alpha: 0.12),
+                              color: const Color(0xFFF1F5F9),
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            child: Text(
-                              user?.isGuest == true ? '訪客身分' : '已綁定會員',
+                            child: const Text(
+                              '未啟用',
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
-                                color: user?.isGuest == true
-                                    ? AppTheme.textMuted
-                                    : AppTheme.accentGreen,
+                                color: AppTheme.textMuted,
                               ),
                             ),
                           ),
